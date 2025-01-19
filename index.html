@@ -34,14 +34,37 @@
             background: rgba(255, 255, 255, 0.8);
             padding: 10px;
             border-radius: 4px;
+            max-width: 300px;
+            overflow-y: auto;
+            max-height: 90vh;
         }
 
         label {
             margin-right: 10px;
+            display: block;
+            margin-top: 10px;
         }
 
-        select {
+        select, input[type="number"] {
             padding: 5px;
+            width: 100%;
+            box-sizing: border-box;
+            margin-top: 5px;
+        }
+
+        .section {
+            margin-top: 15px;
+            border-top: 1px solid #ddd;
+            padding-top: 10px;
+        }
+
+        .transformation-group {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .transformation-group div {
+            width: 32%;
         }
     </style>
 </head>
@@ -59,6 +82,72 @@
             <option value="cilindrico">Cilíndrico</option>
             <option value="esferico">Esférico</option>
         </select>
+
+        <div class="section">
+            <label>
+                <input type="checkbox" id="mostrarGizmo" checked>
+                Mostrar Gizmo
+            </label>
+        </div>
+
+        <div class="section">
+            <label>
+                <input type="checkbox" id="activarTiling">
+                Activar Tiling (Repetición)
+            </label>
+        </div>
+
+        <div class="section">
+            <h3>Transformaciones de Mapeo</h3>
+            
+            <label>Traslación:</label>
+            <div class="transformation-group">
+                <div>
+                    <label for="translateX">X</label>
+                    <input type="number" id="translateX" step="0.1" value="0">
+                </div>
+                <div>
+                    <label for="translateY">Y</label>
+                    <input type="number" id="translateY" step="0.1" value="0">
+                </div>
+                <div>
+                    <label for="translateZ">Z</label>
+                    <input type="number" id="translateZ" step="0.1" value="0">
+                </div>
+            </div>
+
+            <label>Rotación (°):</label>
+            <div class="transformation-group">
+                <div>
+                    <label for="rotateX">X</label>
+                    <input type="number" id="rotateX" step="1" value="0">
+                </div>
+                <div>
+                    <label for="rotateY">Y</label>
+                    <input type="number" id="rotateY" step="1" value="0">
+                </div>
+                <div>
+                    <label for="rotateZ">Z</label>
+                    <input type="number" id="rotateZ" step="1" value="0">
+                </div>
+            </div>
+
+            <label>Escala:</label>
+            <div class="transformation-group">
+                <div>
+                    <label for="scaleX">X</label>
+                    <input type="number" id="scaleX" step="0.1" value="1">
+                </div>
+                <div>
+                    <label for="scaleY">Y</label>
+                    <input type="number" id="scaleY" step="0.1" value="1">
+                </div>
+                <div>
+                    <label for="scaleZ">Z</label>
+                    <input type="number" id="scaleZ" step="0.1" value="1">
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Import Map para Resolución de Módulos -->
@@ -82,6 +171,25 @@
         let textura;
         let seleccionMapeo;
         let tipoProyeccion = 'planar';
+
+        // Gizmo
+        let gizmo;
+        const materialGizmo = new THREE.MeshBasicMaterial({
+            color: 0x0000ff,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.5
+        });
+
+        // Transformaciones de Mapeo
+        const transformacionesMapeo = {
+            translate: { x: 0, y: 0, z: 0 },
+            rotate: { x: 0, y: 0, z: 0 }, // En grados
+            scale: { x: 1, y: 1, z: 1 }
+        };
+
+        // Tiling
+        let tilingActivo = false;
 
         inicializar();
         animar();
@@ -116,9 +224,15 @@
             // Cargar Textura
             const cargadorTextura = new THREE.TextureLoader();
             textura = cargadorTextura.load('textura.jpg', () => {
-                textura.wrapS = THREE.ClampToEdgeWrapping;
-                textura.wrapT = THREE.ClampToEdgeWrapping;
+                if (tilingActivo) {
+                    textura.wrapS = THREE.RepeatWrapping;
+                    textura.wrapT = THREE.RepeatWrapping;
+                } else {
+                    textura.wrapS = THREE.ClampToEdgeWrapping;
+                    textura.wrapT = THREE.ClampToEdgeWrapping;
+                }
                 textura.minFilter = THREE.LinearFilter;
+                textura.needsUpdate = true;
             }, undefined, (error) => {
                 console.error('Error al cargar la textura:', error);
             });
@@ -143,12 +257,53 @@
                 }
             );
 
+            // Crear Gizmo Inicial
+            crearGizmo(tipoProyeccion);
+            escena.add(gizmo);
+
             // Desplegable para Mapeo de Proyección
             seleccionMapeo = document.getElementById('seleccionMapeo');
             seleccionMapeo.addEventListener('change', function (evento) {
                 tipoProyeccion = evento.target.value;
                 actualizarTipoProyeccion();
+                actualizarGizmo();
             });
+
+            // Checkbox para Mostrar/Ocultar Gizmo
+            const mostrarGizmoCheckbox = document.getElementById('mostrarGizmo');
+            mostrarGizmoCheckbox.addEventListener('change', function (evento) {
+                if (gizmo) {
+                    gizmo.visible = evento.target.checked;
+                }
+            });
+
+            // Checkbox para Activar Tiling
+            const activarTilingCheckbox = document.getElementById('activarTiling');
+            activarTilingCheckbox.addEventListener('change', function (evento) {
+                tilingActivo = evento.target.checked;
+                if (textura) {
+                    if (tilingActivo) {
+                        textura.wrapS = THREE.RepeatWrapping;
+                        textura.wrapT = THREE.RepeatWrapping;
+                    } else {
+                        textura.wrapS = THREE.ClampToEdgeWrapping;
+                        textura.wrapT = THREE.ClampToEdgeWrapping;
+                    }
+                    textura.needsUpdate = true;
+                }
+                actualizarMaterialTiling();
+            });
+
+            // Inputs de Transformación de Mapeo
+            document.getElementById('translateX').addEventListener('input', actualizarTransformacionesMapeo);
+            document.getElementById('translateY').addEventListener('input', actualizarTransformacionesMapeo);
+            document.getElementById('translateZ').addEventListener('input', actualizarTransformacionesMapeo);
+            document.getElementById('rotateX').addEventListener('input', actualizarTransformacionesMapeo);
+            document.getElementById('rotateY').addEventListener('input', actualizarTransformacionesMapeo);
+            document.getElementById('rotateZ').addEventListener('input', actualizarTransformacionesMapeo);
+            document.getElementById('scaleX').addEventListener('input', actualizarTransformacionesMapeo);
+            document.getElementById('scaleY').addEventListener('input', actualizarTransformacionesMapeo);
+            document.getElementById('scaleZ').addEventListener('input', actualizarTransformacionesMapeo);
 
             // Manejar Cambio de Tamaño de Ventana
             window.addEventListener('resize', alRedimensionarVentana, false);
@@ -166,21 +321,24 @@
                 uTipoProyeccion: { value: obtenerValorTipoProyeccion(tipoProyeccion) },
                 uDireccionLuz: { value: new THREE.Vector3(10, 10, 10).normalize() },
                 uLuzAmbiente: { value: new THREE.Color(0xffffff).multiplyScalar(0.3) },
-                uColorLuzDireccional: { value: new THREE.Color(0xffffff).multiplyScalar(0.8) }
+                uColorLuzDireccional: { value: new THREE.Color(0xffffff).multiplyScalar(0.8) },
+                uTransform: { value: new THREE.Matrix4() },
+                uTiling: { value: tilingActivo }
             };
 
             // Crear ShaderMaterial
             const materialShader = new THREE.ShaderMaterial({
                 uniforms: uniforms,
                 vertexShader: `
-                    varying vec3 vPosicionMundo;
+                    uniform mat4 uTransform;
+                    varying vec3 vPosicionTransformada;
                     varying vec3 vNormal;
 
                     void main() {
                         vNormal = normalize(normalMatrix * normal);
-                        vec4 posicionMundo = modelMatrix * vec4(position, 1.0);
-                        vPosicionMundo = posicionMundo.xyz;
-                        gl_Position = projectionMatrix * viewMatrix * posicionMundo;
+                        vec4 posicionTransformada = uTransform * vec4(position, 1.0);
+                        vPosicionTransformada = posicionTransformada.xyz;
+                        gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
                     }
                 `,
                 fragmentShader: `
@@ -189,42 +347,49 @@
                     uniform vec3 uDireccionLuz;
                     uniform vec3 uLuzAmbiente;
                     uniform vec3 uColorLuzDireccional;
-                    varying vec3 vPosicionMundo;
+                    uniform bool uTiling;
+                    varying vec3 vPosicionTransformada;
                     varying vec3 vNormal;
 
                     void main() {
                         vec2 uvProyectado;
                         if (uTipoProyeccion == 0) { // Planar
                             // Proyección sobre el plano XZ
-                            uvProyectado = vPosicionMundo.xz * 0.1 + 0.5;
+                            uvProyectado = vPosicionTransformada.xz * 0.1 + 0.5;
                         }
                         else if (uTipoProyeccion == 1) { // Cúbico
                             // Mapeo cúbico basado en el eje dominante
                             vec3 normalAbs = abs(vNormal);
                             if (normalAbs.x > normalAbs.y && normalAbs.x > normalAbs.z) {
-                                uvProyectado = vec2(vPosicionMundo.z, vPosicionMundo.y) * 0.1 + 0.5;
+                                uvProyectado = vec2(vPosicionTransformada.z, vPosicionTransformada.y) * 0.1 + 0.5;
                             }
                             else if (normalAbs.y > normalAbs.x && normalAbs.y > normalAbs.z) {
-                                uvProyectado = vec2(vPosicionMundo.x, vPosicionMundo.z) * 0.1 + 0.5;
+                                uvProyectado = vec2(vPosicionTransformada.x, vPosicionTransformada.z) * 0.1 + 0.5;
                             }
                             else {
-                                uvProyectado = vec2(vPosicionMundo.x, vPosicionMundo.y) * 0.1 + 0.5;
+                                uvProyectado = vec2(vPosicionTransformada.x, vPosicionTransformada.y) * 0.1 + 0.5;
                             }
                         }
                         else if (uTipoProyeccion == 2) { // Cilíndrico
                             // Mapeo cilíndrico alrededor del eje Y
-                            float theta = atan(vPosicionMundo.z, vPosicionMundo.x) / (2.0 * 3.14159265359) + 0.5;
-                            float y = (vPosicionMundo.y * 0.1) + 0.5;
+                            float theta = atan(vPosicionTransformada.z, vPosicionTransformada.x) / (2.0 * 3.14159265359) + 0.5;
+                            float y = (vPosicionTransformada.y * 0.1) + 0.5;
                             uvProyectado = vec2(theta, y);
                         }
                         else if (uTipoProyeccion == 3) { // Esférico
                             // Mapeo esférico
-                            float theta = atan(vPosicionMundo.z, vPosicionMundo.x) / (2.0 * 3.14159265359) + 0.5;
-                            float phi = asin(vPosicionMundo.y / length(vPosicionMundo)) / 3.14159265359 + 0.5;
+                            float theta = atan(vPosicionTransformada.z, vPosicionTransformada.x) / (2.0 * 3.14159265359) + 0.5;
+                            float phi = asin(vPosicionTransformada.y / length(vPosicionTransformada)) / 3.14159265359 + 0.5;
                             uvProyectado = vec2(theta, phi);
                         }
                         else {
                             uvProyectado = vec2(0.0, 0.0);
+                        }
+
+                        if (uTiling) {
+                            uvProyectado = fract(uvProyectado);
+                        } else {
+                            uvProyectado = clamp(uvProyectado, 0.0, 1.0);
                         }
 
                         // Muestrear la textura
@@ -242,6 +407,48 @@
             });
 
             return materialShader;
+        }
+
+        /**
+         * Crea el gizmo basado en el tipo de proyección.
+         * @param {string} tipo - Tipo de proyección.
+         */
+        function crearGizmo(tipo) {
+            if (gizmo) {
+                escena.remove(gizmo);
+                gizmo.geometry.dispose();
+                gizmo.material.dispose();
+            }
+
+            switch (tipo) {
+                case 'planar':
+                    gizmo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), materialGizmo);
+                    break;
+                case 'cubo':
+                    gizmo = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), materialGizmo);
+                    break;
+                case 'cilindrico':
+                    gizmo = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1, 32), materialGizmo);
+                    break;
+                case 'esferico':
+                    gizmo = new THREE.Mesh(new THREE.SphereGeometry(0.5, 32, 32), materialGizmo);
+                    break;
+                default:
+                    gizmo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), materialGizmo);
+            }
+
+            // Aplicar transformaciones de mapeo al gizmo
+            aplicarTransformacionesMapeoGizmo();
+
+            gizmo.visible = document.getElementById('mostrarGizmo').checked;
+            escena.add(gizmo);
+        }
+
+        /**
+         * Actualiza el gizmo cuando cambia el tipo de proyección.
+         */
+        function actualizarGizmo() {
+            crearGizmo(tipoProyeccion);
         }
 
         /**
@@ -293,6 +500,76 @@
             requestAnimationFrame(animar);
             controles.update();
             renderizador.render(escena, camara);
+        }
+
+        /**
+         * Actualiza las transformaciones de mapeo basadas en los inputs del usuario.
+         */
+        function actualizarTransformacionesMapeo() {
+            // Obtener valores de los inputs
+            transformacionesMapeo.translate.x = parseFloat(document.getElementById('translateX').value) || 0;
+            transformacionesMapeo.translate.y = parseFloat(document.getElementById('translateY').value) || 0;
+            transformacionesMapeo.translate.z = parseFloat(document.getElementById('translateZ').value) || 0;
+
+            transformacionesMapeo.rotate.x = THREE.MathUtils.degToRad(parseFloat(document.getElementById('rotateX').value) || 0);
+            transformacionesMapeo.rotate.y = THREE.MathUtils.degToRad(parseFloat(document.getElementById('rotateY').value) || 0);
+            transformacionesMapeo.rotate.z = THREE.MathUtils.degToRad(parseFloat(document.getElementById('rotateZ').value) || 0);
+
+            transformacionesMapeo.scale.x = parseFloat(document.getElementById('scaleX').value) || 1;
+            transformacionesMapeo.scale.y = parseFloat(document.getElementById('scaleY').value) || 1;
+            transformacionesMapeo.scale.z = parseFloat(document.getElementById('scaleZ').value) || 1;
+
+            // Actualizar las transformaciones en el shader
+            actualizarMaterialTransformacion();
+
+            // Aplicar transformaciones al gizmo
+            aplicarTransformacionesMapeoGizmo();
+        }
+
+        /**
+         * Aplica las transformaciones de mapeo al gizmo.
+         */
+        function aplicarTransformacionesMapeoGizmo() {
+            if (!gizmo) return;
+            gizmo.position.set(transformacionesMapeo.translate.x, transformacionesMapeo.translate.y, transformacionesMapeo.translate.z);
+            gizmo.rotation.set(transformacionesMapeo.rotate.x, transformacionesMapeo.rotate.y, transformacionesMapeo.rotate.z);
+            gizmo.scale.set(transformacionesMapeo.scale.x, transformacionesMapeo.scale.y, transformacionesMapeo.scale.z);
+        }
+
+        /**
+         * Actualiza los uniformes de transformación en los materiales de las mallas.
+         */
+        function actualizarMaterialTransformacion() {
+            if (!modelo) return;
+            // Crear una matriz de transformación basada en las transformaciones actuales de mapeo
+            const matrizTransformacion = new THREE.Matrix4();
+            matrizTransformacion.makeScale(transformacionesMapeo.scale.x, transformacionesMapeo.scale.y, transformacionesMapeo.scale.z);
+            matrizTransformacion.multiply(new THREE.Matrix4().makeRotationX(transformacionesMapeo.rotate.x));
+            matrizTransformacion.multiply(new THREE.Matrix4().makeRotationY(transformacionesMapeo.rotate.y));
+            matrizTransformacion.multiply(new THREE.Matrix4().makeRotationZ(transformacionesMapeo.rotate.z));
+            matrizTransformacion.setPosition(transformacionesMapeo.translate.x, transformacionesMapeo.translate.y, transformacionesMapeo.translate.z);
+
+            // Invertir la matriz para que las transformaciones del gizmo se reflejen correctamente en el mapeo
+            const matrizTransformacionInvertida = new THREE.Matrix4().copy(matrizTransformacion).invert();
+
+            // Actualizar uniformes en los materiales
+            modelo.traverse(function (hijo) {
+                if (hijo.isMesh && hijo.material.uniforms) {
+                    hijo.material.uniforms.uTransform.value.copy(matrizTransformacionInvertida);
+                }
+            });
+        }
+
+        /**
+         * Actualiza los uniformes de tiling en los materiales de las mallas.
+         */
+        function actualizarMaterialTiling() {
+            if (!modelo) return;
+            modelo.traverse(function (hijo) {
+                if (hijo.isMesh && hijo.material.uniforms) {
+                    hijo.material.uniforms.uTiling.value = tilingActivo;
+                }
+            });
         }
     </script>
 </body>
